@@ -575,7 +575,7 @@ remove_domain() {
         print_status "Removing website files for $domain..."
         rm -rf "$doc_root"
     else
-        print_warning "Website files kept in $doc_root")
+        print_warning "Website files kept in $doc_root"
     fi
     
     # Remove SSL certificates if they exist
