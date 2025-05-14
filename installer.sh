@@ -529,182 +529,39 @@ print_status "Restarting NGINX to apply all configurations..."
 systemctl restart nginx
 
 # Create a basic NGINX server block
-print_status "Creating default NGINX server block..."
-cat > /etc/nginx/sites-available/default.conf << 'EOL'
-server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
+# print_status "Creating default NGINX server block..."
+# cat > /etc/nginx/sites-available/default.conf << 'EOL'
+# server {
+#     listen 80 default_server;
+#     listen [::]:80 default_server;
 
-    root /var/www/html;
-    index index.php index.html index.htm;
+#     root /var/www/html;
+#     index index.php index.html index.htm;
 
-    server_name _;
+#     server_name _;
 
-    location / {
-        try_files $uri $uri/ /index.php?$args;
-    }
+#     location / {
+#         try_files $uri $uri/ /index.php?$args;
+#     }
 
-    # Pass PHP scripts to FastCGI server
-    location ~ \.php$ {
-        include snippets/fastcgi-php.conf;
-        include fastcgi_params;
-	    fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
-        fastcgi_param SCRIPT_FILENAME $request_filename;
-    }
+#     # Pass PHP scripts to FastCGI server
+#     location ~ \.php$ {
+#         include snippets/fastcgi-php.conf;
+#         include fastcgi_params;
+# 	    fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
+#         fastcgi_param SCRIPT_FILENAME $request_filename;
+#     }
 
-    # Deny access to .htaccess files
-    location ~ /\.ht {
-        deny all;
-    }
-}
-EOL
+#     # Deny access to .htaccess files
+#     location ~ /\.ht {
+#         deny all;
+#     }
+# }
+# EOL
 
 
-# Create a main info.php file
-cat > "/var/www/html/info.php" << 'EOL'
-<?php
-    // Show all PHP info
-    phpinfo();
-?>
-EOL
 
-# Set proper permissions
-chown -R www-data:www-data /var/www/html
-find /var/www/html -type f -exec chmod 644 {} \;
-find /var/www/html -type d -exec chmod 755 {} \;
 
-# Create a version checking script
-cat > "/var/www/html/versions.php" << 'EOL'
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Server Configuration</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        h1 { color: #333; }
-        .container { max-width: 800px; margin: 0 auto; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        tr:nth-child(even) { background-color: #f9f9f9; }
-        .status { padding: 5px; border-radius: 3px; }
-        .active { background-color: #d4edda; color: #155724; }
-        .inactive { background-color: #f8d7da; color: #721c24; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Server Configuration</h1>
-        
-        <h2>System Information</h2>
-        <table>
-            <tr>
-                <th>Component</th>
-                <th>Version/Status</th>
-            </tr>
-            <tr>
-                <td>Operating System</td>
-                <td><?php echo php_uname('s') . ' ' . php_uname('r'); ?></td>
-            </tr>
-            <tr>
-                <td>Server Software</td>
-                <td><?php echo $_SERVER['SERVER_SOFTWARE']; ?></td>
-            </tr>
-            <tr>
-                <td>Current PHP Version</td>
-                <td><?php echo PHP_VERSION; ?></td>
-            </tr>
-            <tr>
-                <td>Database</td>
-                <td><?php 
-                    if (function_exists('mysqli_connect')) {
-                        try {
-                            $mysqli = @new mysqli('localhost', 'root');
-                            if (!$mysqli->connect_error) {
-                                $result = $mysqli->query("SELECT VERSION() as version");
-                                $row = $result->fetch_assoc();
-                                echo $row['version'];
-                                $mysqli->close();
-                            } else {
-                                echo "Database connection failed";
-                            }
-                        } catch (Exception $e) {
-                            echo "Database connection failed";
-                        }
-                    } else {
-                        echo "MySQLi extension not available";
-                    }
-                ?></td>
-            </tr>
-        </table>
-        
-        <h2>Installed PHP Versions</h2>
-        <table>
-            <tr>
-                <th>PHP Version</th>
-                <th>Status</th>
-                <th>Info Page</th>
-            </tr>
-            <?php
-            $php_versions = ['5.6', '7.0', '7.1', '7.2', '7.3', '7.4', '8.0', '8.1', '8.2'];
-            
-            foreach ($php_versions as $version) {
-                $socket_file = "/var/run/php/php{$version}-fpm.sock";
-                $status = file_exists($socket_file) ? "Running" : "Not installed or not running";
-                $status_class = file_exists($socket_file) ? "active" : "inactive";
-                
-                echo "<tr>";
-                echo "<td>PHP $version</td>";
-                echo "<td><span class='status $status_class'>$status</span></td>";
-                echo "<td></td>";
-                echo "</tr>";
-            }
-            ?>
-        </table>
-        
-        <h2>Server Security</h2>
-        <table>
-            <tr>
-                <th>Component</th>
-                <th>Status</th>
-            </tr>
-            <tr>
-                <td>Fail2Ban</td>
-                <td><?php 
-                    exec('systemctl is-active fail2ban', $output, $return_var);
-                    $status = ($return_var === 0) ? "Active" : "Inactive";
-                    $status_class = ($return_var === 0) ? "active" : "inactive";
-                    echo "<span class='status $status_class'>$status</span>";
-                ?></td>
-            </tr>
-            <tr>
-                <td>UFW Firewall</td>
-                <td><?php
-                    exec('ufw status | grep "Status: active"', $output, $return_var);
-                    $status = ($return_var === 0) ? "Active" : "Inactive";
-                    $status_class = ($return_var === 0) ? "active" : "inactive";
-                    echo "<span class='status $status_class'>$status</span>";
-                ?></td>
-            </tr>
-            <tr>
-                <td>Root SSH Access</td>
-                <td><?php
-                    exec('grep "^PermitRootLogin yes" /etc/ssh/sshd_config', $output, $return_var);
-                    $status = ($return_var === 0) ? "Enabled" : "Disabled";
-                    $status_class = ($return_var === 0) ? "active" : "inactive";
-                    echo "<span class='status $status_class'>$status</span>";
-                ?></td>
-            </tr>
-        </table>
-        
-        <h2>Enabled UFW Rules</h2>
-        <pre><?php echo shell_exec('ufw status numbered'); ?></pre>
-        
-        <p><small>Generated on <?php echo date('Y-m-d H:i:s'); ?></small></p>
-    </div>
-</body>
-</html>
-EOL
 
 # Summary
 IP_ADDRESS=$(hostname -I | awk '{print $1}')
