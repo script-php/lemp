@@ -74,26 +74,13 @@ php -v
 
 The script will automatically configure NGINX to use the selected PHP version.
 
-## Testing Your Installation
-
-The installer creates several testing pages:
-
-- `http://your-server-ip/info.php` - Shows PHP info for the current active PHP version
-- `http://your-server-ip/versions.php` - Shows server status, installed PHP versions, and security features
-- `http://your-server-ip/php/info7.4.php` - Shows PHP info for PHP 7.4 (similar pages for all installed versions)
-
 ## Security Considerations
 
 For production servers, consider:
 
-1. Removing the info.php file after testing:
-```bash
-rm /var/www/html/info.php
-```
+1. Setting a strong password for MariaDB root user during installation
 
-2. Setting a strong password for MariaDB root user during installation
-
-3. Disabling root SSH access if not needed:
+2. Disabling root SSH access if not needed:
 ```bash
 # Edit SSH config
 nano /etc/ssh/sshd_config
