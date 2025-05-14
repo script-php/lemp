@@ -6,7 +6,7 @@
 #
 # This script helps manage domains on an NGINX web server:
 # - Add new domains with proper directory structure
-# - Configure NGINX server blocks
+# - Configure NGINX server blocks (standalone or proxy to Apache)
 # - Set up PHP-FPM configurations
 # - Manage SSL certificates (optional)
 # - List all configured domains
@@ -27,6 +27,8 @@ WEB_ROOT="/var/www"
 NGINX_AVAILABLE="/etc/nginx/sites-available"
 NGINX_ENABLED="/etc/nginx/sites-enabled"
 PHP_VERSION="8.2"  # Default PHP version
+APACHE_SITES_AVAILABLE="/etc/apache2/sites-available"
+APACHE_SITES_ENABLED="/etc/apache2/sites-enabled"
 
 # Check if running as root
 if [ "$(id -u)" -ne 0 ]; then
@@ -75,6 +77,40 @@ get_php_versions() {
     find /etc/php -maxdepth 1 -type d | grep -o '[0-9]\.[0-9]' | sort
 }
 
+# Function to create Apache configuration for proxy setup
+create_apache_config() {
+    local domain=$1
+    local doc_root=$2
+    local php_ver=$3
+    
+    # Create Apache configuration
+    cat > "$APACHE_SITES_AVAILABLE/$domain.conf" << EOL
+<VirtualHost 127.0.0.1:8080>
+    ServerName $domain
+    ServerAlias $(echo $server_aliases)
+    
+    DocumentRoot $doc_root/public_html
+    
+    <Directory $doc_root/public_html>
+        Options -Indexes +FollowSymLinks +MultiViews
+        AllowOverride All
+        Require all granted
+    </Directory>
+    
+    ErrorLog $doc_root/logs/apache_error.log
+    CustomLog $doc_root/logs/apache_access.log combined
+    
+    <FilesMatch \.php$>
+        SetHandler "proxy:unix:/var/run/php/php$php_ver-fpm.sock|fcgi://localhost"
+    </FilesMatch>
+</VirtualHost>
+EOL
+
+    # Enable the site in Apache
+    a2ensite "$domain.conf"
+    systemctl reload apache2
+}
+
 # Function to add a new domain
 add_domain() {
     print_status "Adding new domain..."
@@ -115,6 +151,13 @@ add_domain() {
             fi
         done
     fi
+    
+    # Ask for server type
+    echo -e "\nSelect server configuration:"
+    echo "1) NGINX standalone (recommended)"
+    echo "2) NGINX proxying to Apache"
+    read -p "Enter your choice [1-2] [default: 1]: " server_type
+    server_type=${server_type:-1}
     
     # Ask if SSL should be enabled
     read -p "Enable SSL? (y/n) [default: n]: " enable_ssl
@@ -187,8 +230,9 @@ EOL
     # Create NGINX server block
     print_status "Creating NGINX server block for $domain_name..."
     
-    # Start with basic configuration
-    cat > "$NGINX_AVAILABLE/$domain_name.conf" << EOL
+    if [ "$server_type" -eq 1 ]; then
+        # NGINX standalone configuration
+        cat > "$NGINX_AVAILABLE/$domain_name.conf" << EOL
 server {
     listen 80;
     listen [::]:80;
@@ -217,7 +261,52 @@ server {
     }
 }
 EOL
-
+    else
+        # NGINX proxying to Apache configuration
+        print_status "Setting up NGINX to proxy to Apache..."
+        
+        # Check if Apache is installed
+        if ! command -v apache2 &> /dev/null; then
+            print_warning "Apache not found. Installing Apache..."
+            apt-get update
+            apt-get install -y apache2
+            systemctl start apache2
+        fi
+        
+        # Configure Apache to listen on port 8080
+        if ! grep -q "Listen 8080" /etc/apache2/ports.conf; then
+            echo "Listen 8080" >> /etc/apache2/ports.conf
+        fi
+        
+        # Create Apache configuration
+        create_apache_config "$domain_name" "$doc_root" "$php_ver"
+        
+        # Create NGINX proxy configuration
+        cat > "$NGINX_AVAILABLE/$domain_name.conf" << EOL
+server {
+    listen 80;
+    listen [::]:80;
+    
+    server_name $domain_name $(echo $server_aliases);
+    
+    access_log $doc_root/logs/access.log;
+    error_log $doc_root/logs/error.log;
+    
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+    
+    location ~ /\.ht {
+        deny all;
+    }
+}
+EOL
+    fi
+    
     # Add SSL configuration if requested
     if [[ "$enable_ssl" == "y" || "$enable_ssl" == "Y" ]]; then
         print_status "Setting up SSL configuration..."
@@ -262,7 +351,9 @@ EOL
                 -subj "/CN=$domain_name"
             
             # Update NGINX configuration with SSL
-            cat > "$NGINX_AVAILABLE/$domain_name.conf" << EOL
+            if [ "$server_type" -eq 1 ]; then
+                # NGINX standalone SSL config
+                cat > "$NGINX_AVAILABLE/$domain_name.conf" << EOL
 server {
     listen 80;
     listen [::]:80;
@@ -304,6 +395,45 @@ server {
     }
 }
 EOL
+            else
+                # NGINX proxy to Apache SSL config
+                cat > "$NGINX_AVAILABLE/$domain_name.conf" << EOL
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $domain_name $(echo $server_aliases);
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    
+    server_name $domain_name $(echo $server_aliases);
+    
+    ssl_certificate /etc/nginx/ssl/$domain_name/nginx.crt;
+    ssl_certificate_key /etc/nginx/ssl/$domain_name/nginx.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384';
+    
+    access_log $doc_root/logs/access.log;
+    error_log $doc_root/logs/error.log;
+    
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+    
+    location ~ /\.ht {
+        deny all;
+    }
+}
+EOL
+            fi
         fi
     fi
     
@@ -328,6 +458,9 @@ EOL
     fi
     echo -e "Web Root: $doc_root/public_html"
     echo -e "Config File: $NGINX_AVAILABLE/$domain_name.conf"
+    if [ "$server_type" -eq 2 ]; then
+        echo -e "Apache Config File: $APACHE_SITES_AVAILABLE/$domain_name.conf"
+    fi
 }
 
 # Function to list all domains
@@ -341,8 +474,8 @@ list_domains() {
         return
     fi
     
-    printf "%-30s %-20s %-10s %-30s\n" "DOMAIN" "STATUS" "SSL" "DOCUMENT ROOT"
-    echo "----------------------------------------------------------------------------------------"
+    printf "%-30s %-20s %-10s %-15s %-30s\n" "DOMAIN" "STATUS" "SSL" "SERVER TYPE" "DOCUMENT ROOT"
+    echo "----------------------------------------------------------------------------------------------------"
     
     for domain in "${domains[@]}"; do
         # Get status (enabled/disabled)
@@ -359,10 +492,21 @@ list_domains() {
             ssl="${RED}No${NC}"
         fi
         
-        # Get document root
-        doc_root=$(grep -m 1 "root" "$NGINX_AVAILABLE/$domain.conf" | awk '{print $2}' | sed 's/;$//')
+        # Check server type
+        if grep -q "proxy_pass" "$NGINX_AVAILABLE/$domain.conf"; then
+            server_type="NGINX+Apache"
+        else
+            server_type="NGINX only"
+        fi
         
-        printf "%-30s %-20b %-10b %-30s\n" "$domain" "$status" "$ssl" "$doc_root"
+        # Get document root
+        if [ "$server_type" == "NGINX only" ]; then
+            doc_root=$(grep -m 1 "root" "$NGINX_AVAILABLE/$domain.conf" | awk '{print $2}' | sed 's/;$//')
+        else
+            doc_root=$(grep -m 1 "DocumentRoot" "$APACHE_SITES_AVAILABLE/$domain.conf" | awk '{print $2}' | sed 's/;$//' | sed 's/\/public_html//')
+        fi
+        
+        printf "%-30s %-20b %-10b %-15s %-30s\n" "$domain" "$status" "$ssl" "$server_type" "$doc_root"
     done
 }
 
@@ -401,12 +545,27 @@ remove_domain() {
     fi
     
     # Get document root for this domain
-    doc_root=$(grep -m 1 "root" "$NGINX_AVAILABLE/$domain.conf" | awk '{print $2}' | sed 's/;$//' | sed 's/\/public_html//')
+    if grep -q "proxy_pass" "$NGINX_AVAILABLE/$domain.conf"; then
+        # NGINX+Apache setup
+        doc_root=$(grep -m 1 "DocumentRoot" "$APACHE_SITES_AVAILABLE/$domain.conf" | awk '{print $2}' | sed 's/;$//' | sed 's/\/public_html//')
+    else
+        # NGINX only setup
+        doc_root=$(grep -m 1 "root" "$NGINX_AVAILABLE/$domain.conf" | awk '{print $2}' | sed 's/;$//' | sed 's/\/public_html//')
+    fi
     
     # Remove NGINX configuration
     print_status "Removing NGINX configuration for $domain..."
     rm -f "$NGINX_ENABLED/$domain.conf"
     rm -f "$NGINX_AVAILABLE/$domain.conf"
+    
+    # Remove Apache configuration if it exists
+    if [ -f "$APACHE_SITES_AVAILABLE/$domain.conf" ]; then
+        print_status "Removing Apache configuration for $domain..."
+        a2dissite "$domain.conf" > /dev/null 2>&1
+        rm -f "$APACHE_SITES_ENABLED/$domain.conf"
+        rm -f "$APACHE_SITES_AVAILABLE/$domain.conf"
+        systemctl reload apache2
+    fi
     
     # Ask if files should be removed
     read -p "Remove website files in $doc_root? (y/n) [default: n]: " remove_files
@@ -416,7 +575,7 @@ remove_domain() {
         print_status "Removing website files for $domain..."
         rm -rf "$doc_root"
     else
-        print_warning "Website files kept in $doc_root"
+        print_warning "Website files kept in $doc_root")
     fi
     
     # Remove SSL certificates if they exist
@@ -476,6 +635,12 @@ enable_domain() {
     # Enable the domain
     ln -sf "$NGINX_AVAILABLE/$domain.conf" "$NGINX_ENABLED/"
     
+    # If this is an NGINX+Apache setup, enable Apache config too
+    if [ -f "$APACHE_SITES_AVAILABLE/$domain.conf" ] && [ ! -L "$APACHE_SITES_ENABLED/$domain.conf" ]; then
+        a2ensite "$domain.conf"
+        systemctl reload apache2
+    fi
+    
     # Reload NGINX to apply changes
     systemctl reload nginx
     
@@ -511,8 +676,14 @@ disable_domain() {
         fi
     done
     
-    # Disable the domain
+    # Disable the domain in NGINX
     rm -f "$NGINX_ENABLED/$domain.conf"
+    
+    # If this is an NGINX+Apache setup, disable Apache config too
+    if [ -L "$APACHE_SITES_ENABLED/$domain.conf" ]; then
+        a2dissite "$domain.conf"
+        systemctl reload apache2
+    fi
     
     # Reload NGINX to apply changes
     systemctl reload nginx
@@ -554,6 +725,14 @@ show_domain_details() {
         status="${RED}Disabled${NC}"
     fi
     
+    # Check server type
+    if grep -q "proxy_pass" "$conf_file"; then
+        server_type="NGINX proxying to Apache"
+        apache_conf_file="$APACHE_SITES_AVAILABLE/$domain.conf"
+    else
+        server_type="NGINX standalone"
+    fi
+    
     # Check if SSL is configured
     if grep -q "ssl" "$conf_file"; then
         ssl="${GREEN}Enabled${NC}"
@@ -572,13 +751,21 @@ show_domain_details() {
     fi
     
     # Get document root
-    doc_root=$(grep -m 1 "root" "$conf_file" | awk '{print $2}' | sed 's/;$//')
+    if [ "$server_type" == "NGINX standalone" ]; then
+        doc_root=$(grep -m 1 "root" "$conf_file" | awk '{print $2}' | sed 's/;$//')
+    else
+        doc_root=$(grep -m 1 "DocumentRoot" "$apache_conf_file" | awk '{print $2}' | sed 's/;$//')
+    fi
     
     # Get server names
     server_names=$(grep -m 1 "server_name" "$conf_file" | cut -d';' -f1 | sed 's/server_name//' | tr -d ';')
     
     # Get PHP version
-    php_version=$(grep -m 1 "fastcgi_pass" "$conf_file" | grep -o "php[0-9]\.[0-9]" | sed 's/php//')
+    if [ "$server_type" == "NGINX standalone" ]; then
+        php_version=$(grep -m 1 "fastcgi_pass" "$conf_file" | grep -o "php[0-9]\.[0-9]" | sed 's/php//')
+    else
+        php_version=$(grep -m 1 "SetHandler" "$apache_conf_file" | grep -o "php[0-9]\.[0-9]" | sed 's/php//')
+    fi
     
     # Get log files
     access_log=$(grep -m 1 "access_log" "$conf_file" | awk '{print $2}' | sed 's/;$//')
@@ -587,7 +774,11 @@ show_domain_details() {
     # Print details
     echo -e "\n${BLUE}Domain Details for $domain${NC}"
     echo -e "Status: $status"
+    echo -e "Server Type: $server_type"
     echo -e "Configuration File: $conf_file"
+    if [ "$server_type" == "NGINX proxying to Apache" ]; then
+        echo -e "Apache Config File: $apache_conf_file"
+    fi
     echo -e "Document Root: $doc_root"
     echo -e "Server Names: $server_names"
     echo -e "PHP Version: $php_version"
@@ -665,6 +856,17 @@ edit_domain_config() {
     # Edit configuration
     "$editor" "$NGINX_AVAILABLE/$domain.conf"
     
+    # Check if this is an NGINX+Apache setup and edit Apache config if needed
+    if grep -q "proxy_pass" "$NGINX_AVAILABLE/$domain.conf" && [ -f "$APACHE_SITES_AVAILABLE/$domain.conf" ]; then
+        echo -e "\n${YELLOW}This domain uses NGINX proxying to Apache. Would you like to edit the Apache configuration as well?${NC}"
+        read -p "Edit Apache configuration? (y/n) [default: n]: " edit_apache
+        edit_apache=${edit_apache:-n}
+        
+        if [[ "$edit_apache" == "y" || "$edit_apache" == "Y" ]]; then
+            "$editor" "$APACHE_SITES_AVAILABLE/$domain.conf"
+        fi
+    fi
+    
     # Check NGINX configuration
     print_status "Checking NGINX configuration syntax..."
     nginx -t
@@ -676,13 +878,19 @@ edit_domain_config() {
     else
         print_error "NGINX configuration test failed. Please fix the errors and reload manually with 'systemctl reload nginx'."
     fi
+    
+    # If Apache config was edited, reload Apache
+    if [[ "$edit_apache" == "y" || "$edit_apache" == "Y" ]]; then
+        print_status "Reloading Apache..."
+        systemctl reload apache2
+    fi
 }
 
 # Main menu function
 show_menu() {
     clear
     echo -e "${BLUE}============================================${NC}"
-    echo -e "${BLUE}            NGINX DOMAIN MANAGER            ${NC}"
+    echo -e "${BLUE}               DOMAIN MANAGER               ${NC}"
     echo -e "${BLUE}============================================${NC}"
     echo -e "1. Add new domain"
     echo -e "2. List all domains"

@@ -174,7 +174,7 @@ print_success "NGINX installed successfully"
 # PHP Installation
 ###############################
 # php_versions=("5.6" "7.0" "7.1" "7.2" "7.3" "7.4" "8.0" "8.1" "8.2")
-php_versions=("7.4" "8.0" "8.1" "8.2")
+php_versions=("7.4" "8.2")
 
 # Check and remove existing PHP versions
 for version in "${php_versions[@]}"; do
@@ -281,6 +281,10 @@ DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.
 -- Remove test database
 DROP DATABASE IF EXISTS test;
 DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';
+
+CREATE USER 'phpmyadmin'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASSWORD';
+GRANT ALL PRIVILEGES ON *.* TO 'phpmyadmin'@'localhost' WITH GRANT OPTION;
+
 -- Reload privilege tables
 FLUSH PRIVILEGES;
 EOF
@@ -314,11 +318,11 @@ print_status "Creating dedicated phpMyAdmin user..."
 # PHPMYADMIN_PASSWORD=$(openssl rand -base64 12)
 
 # Create user and grant privileges
-mysql -u root -p"$MYSQL_ROOT_PASSWORD" << EOF
-CREATE USER 'phpmyadmin'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASSWORD';
-GRANT ALL PRIVILEGES ON *.* TO 'phpmyadmin'@'localhost' WITH GRANT OPTION;
-FLUSH PRIVILEGES;
-EOF
+# mysql -u root -p"$MYSQL_ROOT_PASSWORD" << EOF
+# CREATE USER 'phpmyadmin'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASSWORD';
+# GRANT ALL PRIVILEGES ON *.* TO 'phpmyadmin'@'localhost' WITH GRANT OPTION;
+# FLUSH PRIVILEGES;
+# EOF
 
 
 
@@ -351,7 +355,7 @@ fi
 # Configure Nginx for phpMyAdmin manually
 print_status "Configuring Nginx for phpMyAdmin..."
     
-cat > /etc/nginx/conf.d/phpmyadmin.conf << EOF
+cat > /etc/nginx/conf.d/phpmyadmin.conf << 'EOF'
 server {
 
     # phpMyAdmin configuration
@@ -374,11 +378,10 @@ server {
         # Handle PHP files
         location ~ ^/phpmyadmin/(.+\.php)$ {
             alias /usr/share/phpmyadmin/$1;
-			fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
             include fastcgi_params;
+			fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
             fastcgi_index index.php;
             fastcgi_param SCRIPT_FILENAME $request_filename;
-            #fastcgi_param HTTP_EARLY_DATA $rfc_early_data if_not_empty;
         }
         
         # Handle static files
@@ -518,13 +521,16 @@ echo "y" | ufw enable
 print_success "UFW configured with rules for ports 22, 80, and 443. Current status:"
 ufw status verbose
 
+systemctl enable ufw
+systemctl restart ufw
+
 # Restart NGINX to apply all configurations
 print_status "Restarting NGINX to apply all configurations..."
 systemctl restart nginx
 
 # Create a basic NGINX server block
 print_status "Creating default NGINX server block..."
-cat > /etc/nginx/sites-available/default << 'EOL'
+cat > /etc/nginx/sites-available/default.conf << 'EOL'
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
@@ -541,9 +547,9 @@ server {
     # Pass PHP scripts to FastCGI server
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
-        # With PHP-FPM (or other unix sockets):
-        # Use the currently active PHP version's socket
-        fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
+        include fastcgi_params;
+	    fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME $request_filename;
     }
 
     # Deny access to .htaccess files
@@ -553,19 +559,6 @@ server {
 }
 EOL
 
-# Create info.php files for testing
-print_status "Creating PHP info pages for testing..."
-mkdir -p /var/www/html/php
-
-for version in "${php_versions[@]}"; do
-    # Create an info.php file for each PHP version
-    cat > "/var/www/html/php/info$version.php" << EOL
-<?php
-    // Show PHP info for version $version
-    phpinfo();
-?>
-EOL
-done
 
 # Create a main info.php file
 cat > "/var/www/html/info.php" << 'EOL'
@@ -663,7 +656,7 @@ cat > "/var/www/html/versions.php" << 'EOL'
                 echo "<tr>";
                 echo "<td>PHP $version</td>";
                 echo "<td><span class='status $status_class'>$status</span></td>";
-                echo "<td><a href='/php/info{$version}.php'>View PHP $version Info</a></td>";
+                echo "<td></td>";
                 echo "</tr>";
             }
             ?>
