@@ -155,28 +155,28 @@ apt-get update || { print_error "Failed to update package lists after adding rep
 ###############################
 # Apache Installation (added before MariaDB)
 ###############################
-# print_status "Checking for existing Apache installation..."
-# if command_exists apache2; then
-#     print_warning "Removing existing Apache installation..."
-#     systemctl stop apache2 2>/dev/null || true
-#     apt-get remove --purge -y apache2 apache2-utils apache2-bin apache2-data
-#     apt-get autoremove -y
-#     rm -rf /etc/apache2 /var/log/apache2 /var/www/html
-# fi
+print_status "Checking for existing Apache installation..."
+if command_exists apache2; then
+    print_warning "Removing existing Apache installation..."
+    systemctl stop apache2 2>/dev/null || true
+    apt-get remove --purge -y apache2 apache2-utils apache2-bin apache2-data
+    apt-get autoremove -y
+    rm -rf /etc/apache2 /var/log/apache2
+fi
 
-# print_status "Installing Apache..."
-# apt-get install -y apache2 || { print_error "Failed to install Apache"; exit 1; }
+print_status "Installing Apache..."
+apt-get install -y apache2 || { print_error "Failed to install Apache"; exit 1; }
 
-# # Configure Apache to run on port 8080
-# print_status "Configuring Apache to use port 8080..."
-# sed -i 's/Listen 80/Listen 8080/' /etc/apache2/ports.conf
-# sed -i 's/<VirtualHost \*:80>/<VirtualHost \*:8080>/' /etc/apache2/sites-available/000-default.conf
+# Configure Apache to run on port 8080
+print_status "Configuring Apache to use port 8080..."
+sed -i 's/Listen 80/Listen 8080/' /etc/apache2/ports.conf
+sed -i 's/<VirtualHost \*:80>/<VirtualHost \*:8080>/' /etc/apache2/sites-available/000-default.conf
 
-# # Disable Apache from starting automatically (we'll start it manually after Nginx)
-# # systemctl disable apache2
-# systemctl enable apache2
-# systemctl start apache2
-# print_success "Apache installed and configured to use port 8080"
+# Disable Apache from starting automatically (we'll start it manually after Nginx)
+# systemctl disable apache2
+systemctl enable apache2
+systemctl start apache2
+print_success "Apache installed and configured to use port 8080"
 
 
 
