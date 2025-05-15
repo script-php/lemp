@@ -252,10 +252,8 @@ chmod +x /usr/local/bin/phpswitch
 print_success "PHP version switcher created at /usr/local/bin/phpswitch"
 
 
-
 # Default to PHP 8.2
 /usr/local/bin/phpswitch 8.2 || print_warning "Could not set PHP 8.2 as default"
-
 
 
 # Install MariaDB
@@ -269,6 +267,11 @@ apt-get install -y mariadb-server mariadb-client
 print_status "Securing MariaDB installation..."
 
 
+# Create a dedicated database user for phpMyAdmin (optional but more secure)
+print_status "Creating dedicated phpMyAdmin user..."
+
+# Generate a random password for the phpMyAdmin user
+# PHPMYADMIN_PASSWORD=$(openssl rand -base64 12)
 
 # Create a temp file with MySQL commands
 cat > /tmp/mysql_secure_installation.sql << EOF
@@ -289,12 +292,8 @@ GRANT ALL PRIVILEGES ON *.* TO 'phpmyadmin'@'localhost' WITH GRANT OPTION;
 FLUSH PRIVILEGES;
 EOF
 
-
-
 # Run the SQL commands as root (no password needed for fresh install)
 mysql < /tmp/mysql_secure_installation.sql
-
-
 
 # Remove the temp file
 rm /tmp/mysql_secure_installation.sql
@@ -306,25 +305,8 @@ chmod 600 /root/.mariadb_credentials
 print_success "MariaDB installed and secured"
 
 
-
-
 # Install phpMyAdmin without Apache
 print_status "Installing phpMyAdmin without Apache..."
-
-# Create a dedicated database user for phpMyAdmin (optional but more secure)
-print_status "Creating dedicated phpMyAdmin user..."
-
-# Generate a random password for the phpMyAdmin user
-# PHPMYADMIN_PASSWORD=$(openssl rand -base64 12)
-
-# Create user and grant privileges
-# mysql -u root -p"$MYSQL_ROOT_PASSWORD" << EOF
-# CREATE USER 'phpmyadmin'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASSWORD';
-# GRANT ALL PRIVILEGES ON *.* TO 'phpmyadmin'@'localhost' WITH GRANT OPTION;
-# FLUSH PRIVILEGES;
-# EOF
-
-
 
 # First, mark apache2 packages as not to be installed
 # apt-mark hold apache2 apache2-bin apache2-data apache2-utils
@@ -379,7 +361,7 @@ server {
         location ~ ^/phpmyadmin/(.+\.php)$ {
             alias /usr/share/phpmyadmin/$1;
             include fastcgi_params;
-			fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
+			fastcgi_pass unix:/var/run/php/php7.4-fpm.sock;
             fastcgi_index index.php;
             fastcgi_param SCRIPT_FILENAME $request_filename;
         }
@@ -393,23 +375,8 @@ server {
 EOF
 
 
-# Determine the PHP-FPM socket location and update the config
-# PHP_FPM_SOCK=$(find /var/run/php/ -name "*.sock" | head -n 1)
-
-# if [ -n "$PHP_FPM_SOCK" ]; then
-#     sed -i "s|unix:/var/run/php/php-fpm.sock|unix:$PHP_FPM_SOCK|g" /etc/nginx/conf.d/phpmyadmin.conf
-# else
-#     print_warning "PHP-FPM socket not found. You may need to manually update the socket path in /etc/nginx/conf.d/phpmyadmin.conf"
-# fi
-
 # Test Nginx config and reload
 nginx -t && systemctl reload nginx
-
-
-
-
-
-
 
 
 ###############################
@@ -480,8 +447,6 @@ print_success "Fail2Ban installed and configured"
 
 
 
-
-
 ###############################
 # UFW (Firewall) Configuration
 ###############################
@@ -527,10 +492,6 @@ systemctl restart ufw
 
 
 
-
-
-
-#!/bin/bash
 
 # Define path to nginx config
 NGINX_CONF="/etc/nginx/nginx.conf"
