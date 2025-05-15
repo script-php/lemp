@@ -18,7 +18,7 @@
 # Text colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
@@ -39,7 +39,7 @@ fi
 
 # Function to display status messages
 print_status() {
-    echo -e "\n${BLUE}[*] $1${NC}"
+    echo -e "\n${CYAN}[*] $1${NC}"
 }
 
 print_success() {
@@ -772,7 +772,7 @@ show_domain_details() {
     error_log=$(grep -m 1 "error_log" "$conf_file" | awk '{print $2}' | sed 's/;$//')
     
     # Print details
-    echo -e "\n${BLUE}Domain Details for $domain${NC}"
+    echo -e "\n${CYAN}Domain Details for $domain${NC}"
     echo -e "Status: $status"
     echo -e "Server Type: $server_type"
     echo -e "Configuration File: $conf_file"
@@ -789,7 +789,7 @@ show_domain_details() {
     
     # Show SSL certificate details if SSL is enabled
     if [[ "$ssl" == *"Enabled"* ]]; then
-        echo -e "\n${BLUE}SSL Certificate Details:${NC}"
+        echo -e "\n${CYAN}SSL Certificate Details:${NC}"
         
         if [ "$cert_type" == "Let's Encrypt" ]; then
             # Try to find Let's Encrypt certificate
@@ -889,9 +889,9 @@ edit_domain_config() {
 # Main menu function
 show_menu() {
     clear
-    echo -e "${BLUE}============================================${NC}"
-    echo -e "${BLUE}               DOMAIN MANAGER               ${NC}"
-    echo -e "${BLUE}============================================${NC}"
+    echo -e "${CYAN}============================================${NC}"
+    echo -e "${CYAN}               DOMAIN MANAGER               ${NC}"
+    echo -e "${CYAN}============================================${NC}"
     echo -e "1. Add new domain"
     echo -e "2. List all domains"
     echo -e "3. Show domain details"
@@ -900,7 +900,7 @@ show_menu() {
     echo -e "6. Disable domain"
     echo -e "7. Remove domain"
     echo -e "8. Exit"
-    echo -e "${BLUE}============================================${NC}"
+    echo -e "${CYAN}============================================${NC}"
     echo ""
 }
 
