@@ -173,8 +173,8 @@ print_success "NGINX installed successfully"
 ###############################
 # PHP Installation
 ###############################
-# php_versions=("5.6" "7.0" "7.1" "7.2" "7.3" "7.4" "8.0" "8.1" "8.2")
-php_versions=("7.4" "8.2")
+php_versions=("5.6" "7.0" "7.1" "7.2" "7.3" "7.4" "8.0" "8.1" "8.2")
+# php_versions=("7.4" "8.2")
 
 # Check and remove existing PHP versions
 for version in "${php_versions[@]}"; do
