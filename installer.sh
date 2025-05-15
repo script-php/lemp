@@ -356,16 +356,16 @@ echo "phpmyadmin phpmyadmin/reconfigure-webserver multiselect none" | debconf-se
 apt-get install -y --no-install-recommends phpmyadmin
 
 # In case Apache was installed (despite our efforts), disable and stop it
-if dpkg -l | grep -q apache2; then
-    print_warning "Apache was installed as a dependency. Disabling it..."
-    systemctl stop apache2 2>/dev/null || true
-    systemctl disable apache2 2>/dev/null || true
+# if dpkg -l | grep -q apache2; then
+    # print_warning "Apache was installed as a dependency. Disabling it..."
+    # systemctl stop apache2 2>/dev/null || true
+    # systemctl disable apache2 2>/dev/null || true
     
     # Mask the apache2 service to prevent it from starting on boot
-    systemctl mask apache2 2>/dev/null || true
+    # systemctl mask apache2 2>/dev/null || true
     
-    print_status "Apache has been disabled and masked to prevent it from starting"
-fi
+    # print_status "Apache has been disabled and masked to prevent it from starting"
+# fi
 
 # Configure Nginx for phpMyAdmin manually
 print_status "Configuring Nginx for phpMyAdmin..."
