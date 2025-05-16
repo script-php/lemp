@@ -100,7 +100,7 @@ create_apache_config() {
     ErrorLog $doc_root/logs/apache_error.log
     CustomLog $doc_root/logs/apache_access.log combined
     
-    <FilesMatch \.php$>
+    <FilesMatch ".+\.ph(ar|p|tml)$">
         SetHandler "proxy:unix:/var/run/php/php$php_ver-fpm.sock|fcgi://localhost"
     </FilesMatch>
 </VirtualHost>

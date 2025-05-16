@@ -174,6 +174,10 @@ sed -i 's/<VirtualHost \*:80>/<VirtualHost \*:8080>/' /etc/apache2/sites-availab
 
 # Disable Apache from starting automatically (we'll start it manually after Nginx)
 # systemctl disable apache2
+a2enmod rewrite headers ssl proxy proxy_fcgi setenvif
+
+a2enconf php5.6-fpm php7.0-fpm php7.1-fpm php7.2-fpm php7.3-fpm php7.4-fpm php8.0-fpm php8.1-fpm php8.2-fpm
+
 systemctl enable apache2
 systemctl start apache2
 print_success "Apache installed and configured to use port 8080"
