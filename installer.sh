@@ -172,6 +172,14 @@ print_status "Configuring Apache to use port 8080..."
 sed -i 's/Listen 80/Listen 8080/' /etc/apache2/ports.conf
 sed -i 's/<VirtualHost \*:80>/<VirtualHost \*:8080>/' /etc/apache2/sites-available/000-default.conf
 
+
+
+# Replace the original config
+# print_status "Creating PHP version switcher script..."
+# cat > /usr/local/bin/phpswitch << 'EOL'
+
+# EOL
+
 # Disable Apache from starting automatically (we'll start it manually after Nginx)
 # systemctl disable apache2
 a2enmod rewrite headers ssl proxy proxy_fcgi setenvif
@@ -211,7 +219,6 @@ print_success "NGINX installed successfully"
 # PHP Installation
 ###############################
 php_versions=("5.6" "7.0" "7.1" "7.2" "7.3" "7.4" "8.0" "8.1" "8.2")
-# php_versions=("7.4" "8.2")
 
 # Check and remove existing PHP versions
 for version in "${php_versions[@]}"; do
